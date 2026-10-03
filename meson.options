@@ -1,5 +1,6 @@
 # booleans
 option('gpl', type: 'boolean', value: true, description: 'GPL (version 2 or later) build')
+option('nvvfx-vsr', type: 'feature', value: 'disabled', description: 'NVIDIA NvVFX fixed-scale CUDA video filter (GPLv2)')
 option('cplayer', type: 'boolean', value: true, description: 'mpv CLI player')
 option('libmpv', type: 'boolean', value: true, description: 'libmpv library')
 option('build-date', type: 'boolean', value: true, description: 'include compile timestamp in binary')

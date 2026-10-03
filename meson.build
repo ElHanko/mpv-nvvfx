@@ -1375,6 +1375,21 @@ if features['cuda-interop'] and features['vulkan']
     sources += files('video/out/hwdec/hwdec_cuda_vk.c')
 endif
 
+nvvfx_vsr_opt = get_option('nvvfx-vsr').require(
+    get_option('gpl') and features['cuda-interop'] and features['libdl'] and host_machine.system() == 'linux',
+    error_message: 'nvvfx-vsr requires GPL, Linux, dlopen and CUDA interop!',
+)
+nvvfx_cuda = dependency('cuda', modules: ['nvrtc'], required: nvvfx_vsr_opt,
+                        include_type: 'system')
+features += {'nvvfx-vsr': nvvfx_cuda.found()}
+if features['nvvfx-vsr']
+    # Headers only: the driver, NVRTC and NvVFX are loaded on filter use.
+    dependencies += nvvfx_cuda.partial_dependency(compile_args: true, includes: true)
+    sources += files('video/filter/vf_vsr.c',
+                     'video/filter/vsr_proc.c',
+                     'video/filter/yuv_to_rgba.c')
+endif
+
 android_media_ndk = get_option('android-media-ndk').require(
     features['android'] and cc.has_header_symbol('media/NdkImageReader.h', 'AIMAGE_FORMAT_PRIVATE')
 )
