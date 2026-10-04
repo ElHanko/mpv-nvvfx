@@ -2,10 +2,11 @@
 """Regression checks against the built mpv, without NvVFX or a GPU call.
 
 Usage: python3 test/nvvfx-vsr/check.py /absolute/path/to/test-video.mp4
-Build with ./build.sh first. The default NvVFX directory must be empty.
+Build with ./build.sh first.
 """
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import unittest
@@ -14,6 +15,11 @@ ROOT = Path(__file__).resolve().parents[2]
 VIDEO = Path(sys.argv.pop(1)).resolve()
 BINARY = ROOT / "build/mpv"
 ENV = dict(os.environ, MPV_NVVFX_LIBDIR=str(ROOT / "local/missing-nvvfx-test"))
+QUALITY_LEVELS = {
+    "low": 1, "medium": 2, "high": 3, "ultra": 4,
+    "highbitrate-low": 16, "highbitrate-medium": 17,
+    "highbitrate-high": 18, "highbitrate-ultra": 19,
+}
 
 
 def run(*arguments, env=ENV):
@@ -30,11 +36,6 @@ def filter_run(specification, env=ENV):
 
 
 class VsrChecks(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        if (ROOT / "local/nvvfx/lib/libNVCVImage.so").exists():
-            raise unittest.SkipTest("These checks require the default runtime to be absent")
-
     def test_start_without_runtime(self):
         version = run("--version")
         self.assertEqual(version.returncode, 0, version.stdout)
@@ -56,7 +57,7 @@ class VsrChecks(unittest.TestCase):
 
     def test_all_fixed_scales_and_qualities(self):
         for scale in ("4/3", "1.333333", "1.5", "2", "3", "4"):
-            for quality in ("low", "medium", "high", "ultra"):
+            for quality in QUALITY_LEVELS:
                 with self.subTest(scale=scale, quality=quality):
                     result = filter_run(f"vsr:scale={scale}:quality={quality}")
                     self.assertGreater(result.returncode, 0, result.stdout)
@@ -65,12 +66,26 @@ class VsrChecks(unittest.TestCase):
                     self.assertNotIn("scale must be", result.stdout)
                     self.assertNotIn("CUDA", result.stdout)
 
-    def test_default_and_loading_order(self):
+    def test_quality_mapping(self):
+        source = (ROOT / "video/filter/vf_vsr.c").read_text()
+        option = re.search(r'OPT_CHOICE\(quality,(.*?)\)\}', source, re.S)
+        self.assertIsNotNone(option)
+        mapping = {name: int(level) for name, level in
+                   re.findall(r'\{"([^"]+)",\s*(\d+)\}', option.group(1))}
+        self.assertEqual(mapping, QUALITY_LEVELS)
+
+    def test_runtime_requires_explicit_directory(self):
+        env = dict(os.environ)
+        env.pop("MPV_NVVFX_LIBDIR", None)
+
+        result = filter_run("vsr", env=env)
+        self.assertGreater(result.returncode, 0, result.stdout)
+        self.assertIn("MPV_NVVFX_LIBDIR is required", result.stdout)
+        self.assertNotIn("CUDA", result.stdout)
+
         result = filter_run("vsr")
         self.assertGreater(result.returncode, 0, result.stdout)
-        first = result.stdout.index(str(ROOT / "local/missing-nvvfx-test"))
-        second = result.stdout.index(str(ROOT / "local/nvvfx/lib"))
-        self.assertLess(first, second)
+        self.assertIn(str(ROOT / "local/missing-nvvfx-test"), result.stdout)
         self.assertIn("NvVFX runtime unavailable", result.stdout)
 
     def test_reject_unsupported_scales(self):

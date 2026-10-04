@@ -62,7 +62,7 @@ MPV_NVVFX_LIBDIR="$PWD/local/nvvfx/lib" \
 Build only through the existing Debian 13 / CUDA 13.2 Docker environment:
 
 ```sh
-cd /home/mathias/git/mpv-nvvfx
+cd mpv-nvvfx
 ./build.sh
 ```
 
@@ -80,26 +80,51 @@ TensorRT are not added to mpv's link dependencies or toolkit rpath.
   --gpu-api=vulkan \
   --hwdec=nvdec \
   --vf='vsr:scale=2:quality=high' \
-  "$HOME/Downloads/Big_Buck_Bunny_720_10s_10MB.mp4"
+  video.mp4
 ```
 
 Defaults: `scale=2`, `quality=high`. Supported fixed scales are `4/3`,
-`1.333333`, `1.5`, `2`, `3`, `4`; qualities are `low`, `medium`, `high`,
-`ultra` (NvVFX QualityLevel 1–4). Factors within 0.000001 of a supported
+`1.333333`, `1.5`, `2`, `3`, `4`. Factors within 0.000001 of a supported
 factor are canonicalized, so `1.333333` and `4/3` produce the same dimensions.
 Output dimensions are rounded to the nearest integer. The requested example
 configures 1280×720 → 2560×1440. Unsupported factors, including `auto` and
 `off`, fail. There is no automatic render-target scaling.
 
+Supported qualities use the same `VideoSuperRes` effect in NVIDIA VFX 0.2.0.0:
+
+| Quality | QualityLevel |
+| --- | --- |
+| `low` | 1 |
+| `medium` | 2 |
+| `high` | 3 |
+| `ultra` | 4 |
+| `highbitrate-low` | 16 |
+| `highbitrate-medium` | 17 |
+| `highbitrate-high` | 18 |
+| `highbitrate-ultra` | 19 |
+
+Standard modes 1–4 suit typically compressed video and also reduce compression
+artifacts during upscaling. High-bitrate modes 16–19 target high-quality sources
+with few compression artifacts. `highbitrate-ultra` is particularly useful for
+high-quality Blu-ray/remux-like sources. The mpv filter does not select a mode
+automatically; future Jellyfin/wrapper automation is outside this change.
+
+```sh
+MPV_NVVFX_LIBDIR="$PWD/local/nvvfx/lib" \
+./build/mpv \
+  --vo=gpu-next \
+  --gpu-api=vulkan \
+  --hwdec=nvdec \
+  --vf='vsr:scale=2:quality=highbitrate-ultra' \
+  video.mkv
+```
+
 ## Runtime loading
 
-NvVFX is loaded only when an actual `vsr` filter is created:
-
-1. Absolute directory in `MPV_NVVFX_LIBDIR`, if set.
-2. `/home/mathias/git/mpv-nvvfx/local/nvvfx/lib`.
-
-A failed environment-directory load is cleaned up before trying the default.
-Relative environment paths are rejected. The filter never searches the
+NvVFX is loaded only when an actual `vsr` filter is created.
+`MPV_NVVFX_LIBDIR` is required and must point to the absolute directory
+containing the prepared NvVFX runtime. Relative paths are rejected. There is
+no compiled-in user-specific fallback path, and the filter never searches the
 working directory for NvVFX. The currently ELF-verified runtime layout is
 NVIDIA VFX 0.2.0.0. Every library below is mandatory and loaded in this order,
 using absolute paths and `RTLD_NOW | RTLD_GLOBAL`:
@@ -129,7 +154,7 @@ not rely on wheel-specific RPATH entries, modify `LD_LIBRARY_PATH`, add system
 search paths or create symlinks. `libcuda.so.1` comes exclusively from the
 NVIDIA host driver; it is never searched for in the local runtime directory.
 Any dlopen failure reports the library name, complete attempted path and
-dlerror, then releases the directory's loaded handles before fallback/failure.
+dlerror, then releases the directory's loaded handles before failure.
 All successful dlopen handles are kept per filter and closed in reverse order.
 
 The runtime needs `libNVCVImage.so`, `libVideoFX.so` and the matching dependency,
@@ -182,7 +207,7 @@ an entire CUDA context.
 The six files in `video/filter/` are derived from the corresponding files in
 `src/mpv/video/filter/` of `zhangmq/vsr-player`, reference commit
 `f7941984e29c687bf2e318646728f06ee5e5cd0a`, read from
-`/home/mathias/git/vsr-player-reference` without executing its scripts.
+from a local checkout of that reference commit without executing its scripts.
 The reference repository's `LICENSE` is GPL version 2. The six source files
 carry GPL-2.0-only SPDX/provenance notices and refer to mpv's existing
 `LICENSE.GPL`. Those reference files contained no individual copyright
@@ -224,9 +249,9 @@ no TensorRT dependencies.
   `VO: [gpu-next] 1280x720 cuda[nv12]`.
 - Host requested VSR options with gpu-next/Vulkan/NVDEC, five-frame limit:
   controlled exit 2 with `VSR: NvVFX runtime unavailable`; no crash/abort/hang.
-- `python3 test/nvvfx-vsr/check.py "$HOME/Downloads/Big_Buck_Bunny_720_10s_10MB.mp4"`:
+- `python3 test/nvvfx-vsr/check.py video.mp4`:
   nine tests pass. Tests exercise all 24 scale/quality combinations, invalid
-  scales/quality, defaults, runtime search order, relative-path rejection,
+  scales/quality, defaults, required/absolute runtime path handling, relative-path rejection,
   startup/playback without runtime, an existing format filter, registration
   and the absence of new CUDA/NVRTC/NvVFX/TensorRT ELF NEEDED entries.
 - Full `--vf=help` output compared with the pre-change binary: identical after

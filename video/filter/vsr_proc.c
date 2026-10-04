@@ -14,8 +14,6 @@
 
 #include "mpv_talloc.h"
 
-#define NVVFX_DEFAULT_LIBDIR "/home/mathias/git/mpv-nvvfx/local/nvvfx/lib"
-
 void vsr_runtime_unload(struct vsr_runtime *r)
 {
     for (int i = r->num_libs - 1; i >= 0; i--)
@@ -81,22 +79,23 @@ fail:
 
 bool vsr_runtime_load(struct vsr_runtime *r, struct mp_log *log)
 {
-    const char *override = getenv("MPV_NVVFX_LIBDIR");
-    if (override && override[0]) {
-        if (override[0] != '/') {
-            mp_err(log, "VSR: MPV_NVVFX_LIBDIR must be an absolute path; "
-                   "current-directory library lookup is disabled.\n");
-            return false;
-        }
-        if (load_directory(r, log, override))
-            return true;
+    const char *dir = getenv("MPV_NVVFX_LIBDIR");
+    if (!dir || !dir[0]) {
+        mp_err(log, "VSR: MPV_NVVFX_LIBDIR is required and must point to an "
+               "absolute directory containing the NvVFX runtime.\n");
+        return false;
     }
-    if (load_directory(r, log, NVVFX_DEFAULT_LIBDIR))
+    if (dir[0] != '/') {
+        mp_err(log, "VSR: MPV_NVVFX_LIBDIR must be an absolute path; "
+               "current-directory library lookup is disabled.\n");
+        return false;
+    }
+    if (load_directory(r, log, dir))
         return true;
-    mp_err(log, "VSR: NvVFX runtime unavailable. Set MPV_NVVFX_LIBDIR to an "
-           "absolute directory containing libNVCVImage.so, libVideoFX.so "
-           "and their dependencies, or provide them in %s.\n",
-           NVVFX_DEFAULT_LIBDIR);
+
+    mp_err(log, "VSR: NvVFX runtime unavailable in %s. Check that the "
+           "directory contains the matching runtime and dependencies.\n",
+           dir);
     return false;
 }
 

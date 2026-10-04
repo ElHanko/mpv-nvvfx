@@ -304,7 +304,9 @@ fail:
 static const m_option_t options[] = {
     {"scale", OPT_DOUBLE(scale), M_RANGE(1.333332, 4)},
     {"quality", OPT_CHOICE(quality, {"low", 1}, {"medium", 2},
-                           {"high", 3}, {"ultra", 4})},
+                           {"high", 3}, {"ultra", 4},
+                           {"highbitrate-low", 16}, {"highbitrate-medium", 17},
+                           {"highbitrate-high", 18}, {"highbitrate-ultra", 19})},
     {0}
 };
 
