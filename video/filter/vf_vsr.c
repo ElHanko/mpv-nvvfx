@@ -36,6 +36,7 @@ struct priv {
     struct yuv_to_rgba converter;
     struct mp_image_params input_params;
     bool configured;
+    bool warmup_pending;
 };
 
 #define CUDA_CHECK(f, expression) \
@@ -66,6 +67,7 @@ static void release_pipeline(struct mp_filter *f)
     p->stream = NULL;
     p->decoded = NULL;
     p->configured = false;
+    p->warmup_pending = false;
 }
 
 static bool configure(struct mp_filter *f, struct mp_image *input,
@@ -99,6 +101,7 @@ static bool configure(struct mp_filter *f, struct mp_image *input,
         return false;
     p->input_params = input->params;
     p->configured = true;
+    p->warmup_pending = true;
     return true;
 }
 
@@ -170,8 +173,19 @@ static void process(struct mp_filter *f)
     if (!CUDA_CHECK(f, p->cu->cuEventRecord(p->decoded, device->stream)) ||
         !CUDA_CHECK(f, p->cu->cuStreamWaitEvent(p->stream, p->decoded, 0)) ||
         !yuv_to_rgba_convert(&p->converter, p->cu, f->log, input,
-                             p->vsr.input.pixels, p->vsr.input.pitch, p->stream) ||
-        !vsr_process(&p->vsr, &p->runtime, f->log))
+                             p->vsr.input.pixels, p->vsr.input.pitch, p->stream))
+        goto cuda_fail;
+
+    // NvVFX vor dem ersten sichtbaren Frame vorwaermen.
+    if (p->warmup_pending) {
+        for (int i = 0; i < 2; i++) {
+            if (!vsr_process(&p->vsr, &p->runtime, f->log))
+                goto cuda_fail;
+        }
+        p->warmup_pending = false;
+    }
+
+    if (!vsr_process(&p->vsr, &p->runtime, f->log))
         goto cuda_fail;
 
     avframe = av_frame_alloc();
